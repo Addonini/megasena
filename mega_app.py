@@ -100,28 +100,78 @@ st.divider()
 st.subheader("📊 Frequência das Dezenas")
 st.bar_chart(data=frequencias.set_index('Número'))
 
-# --- GERADOR DE PALPITES INTELIGENTE ---
-st.subheader("🔮 Gerador de Palpites Ponderado")
-st.write("Gera um palpite de 6 números dando maior probabilidade de escolha aos números com maior frequência no histórico.")
+# --- GERADOR DE PALPITES INTELIGENTE (COM FILTROS HEURÍSTICOS) ---
+st.subheader("🔮 Gerador de Palpites Avançado (Filtro Histórico)")
+st.write("Este algoritmo não apenas usa a frequência dos números (dando peso aos que mais saem), mas também atua como um 'fiscal', rejeitando palpites que fujam do padrão histórico (pares/ímpares, colunas e quadrantes).")
 
-if st.button("🎲 Gerar Palpite Ponderado"):
-    # Se ainda tivermos poucos sorteios, usa pesos iguais para não dar erro
+# Função auxiliar para descobrir o quadrante de um número no volante
+def get_quadrante(n):
+    # O volante tem 6 linhas (0 a 5) e 10 colunas (0 a 9)
+    linha = (n - 1) // 10
+    coluna = (n - 1) % 10
+    
+    if linha < 3: # Metade superior
+        return 1 if coluna < 5 else 2
+    else:         # Metade inferior
+        return 3 if coluna < 5 else 4
+
+if st.button("🎲 Gerar Palpite Inteligente"):
     total_sorteios = frequencias['Vezes Sorteado'].sum()
     
     if total_sorteios == 0:
         pesos_normalizados = None
     else:
-        # Adiciona +1 para evitar divisão por zero ou peso zero absoluto
         pesos = frequencias['Vezes Sorteado'].values + 1
         pesos_normalizados = pesos / pesos.sum()
     
-    palpite = np.random.choice(
-        frequencias['Número'].values, 
-        size=6, 
-        replace=False, 
-        p=pesos_normalizados
-    )
-    palpite.sort()
+    palpite_valido = False
+    tentativas = 0
     
-    st.balloons()
-    st.success(f"**Seu Palpite Sugerido:** {palpite[0]:02d} - {palpite[1]:02d} - {palpite[2]:02d} - {palpite[3]:02d} - {palpite[4]:02d} - {palpite[5]:02d}")
+    # LOOP DE AMOSTRAGEM DE REJEIÇÃO
+    # O Python vai gerar jogos sem parar até que um passe em todas as regras
+    with st.spinner("Analisando probabilidades e aplicando filtros..."):
+        while not palpite_valido and tentativas < 10000:
+            tentativas += 1
+            
+            # 1. Gera o palpite baseado nos pesos históricos
+            palpite_teste = np.random.choice(
+                frequencias['Número'].values, 
+                size=6, 
+                replace=False, 
+                p=pesos_normalizados
+            )
+            
+            # 2. REGRA: Pares e Ímpares (Aceitamos apenas 3/3, 4/2 ou 2/4)
+            pares = sum(1 for x in palpite_teste if x % 2 == 0)
+            if pares not in [2, 3, 4]:
+                continue # Falhou! Volta pro começo do 'while'
+                
+            # 3. REGRA: Colunas (Pelo menos 4 colunas diferentes)
+            # Pegamos o resto da divisão por 10 para achar a coluna (ex: 15 e 25 estão na coluna 4)
+            colunas_usadas = set((x - 1) % 10 for x in palpite_teste)
+            if len(colunas_usadas) < 4:
+                continue # Falhou!
+                
+            # 4. REGRA: Quadrantes (Pelo menos 3 quadrantes distintos)
+            quadrantes_usados = set(get_quadrante(x) for x in palpite_teste)
+            if len(quadrantes_usados) < 3:
+                continue # Falhou!
+                
+            # Se chegou até aqui, passou em TODAS as regras do Ademir!
+            palpite = palpite_teste
+            palpite.sort()
+            palpite_valido = True
+    
+    if palpite_valido:
+        st.balloons()
+        st.success(f"**Seu Palpite de Ouro:** {palpite[0]:02d} - {palpite[1]:02d} - {palpite[2]:02d} - {palpite[3]:02d} - {palpite[4]:02d} - {palpite[5]:02d}")
+        
+        # Exibindo os bastidores para o usuário
+        st.info(f"""
+        📊 **Relatório de Validação do Palpite:**
+        - **Tentativas descartadas pelo algoritmo:** {tentativas - 1} jogos fora do padrão.
+        - **Pares/Ímpares:** {pares} pares e {6-pares} ímpares.
+        - **Espalhamento:** Dezenas distribuídas em {len(colunas_usadas)} colunas e {len(quadrantes_usados)} quadrantes diferentes.
+        """)
+    else:
+        st.error("Não foi possível gerar um palpite com essas regras. Tente novamente.")
