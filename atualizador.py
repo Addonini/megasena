@@ -1,13 +1,18 @@
+import os
 import requests
 from supabase import create_client, Client
 
-# --- 1. CONFIGURAÇÕES DO SUPABASE ---
-# Como este é um script à parte, você pode colar suas chaves direto aqui 
-# (só não suba este arquivo para o GitHub público com as chaves abertas!)
-URL_SUPABASE = "https://seu-projeto.supabase.co"
-KEY_SUPABASE = "sua-chave-anon-publica"
+# Busca as chaves de forma segura nas configurações ocultas do GitHub
+URL_SUPABASE = os.environ.get("SUPABASE_URL")
+KEY_SUPABASE = os.environ.get("SUPABASE_KEY")
+
+if not URL_SUPABASE or not KEY_SUPABASE:
+    print("❌ ERRO: Chaves do Supabase não encontradas!")
+    exit()
 
 supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
+
+# ... (MANTENHA O RESTO DO SEU CÓDIGO IGUAL AQUI PARA BAIXO) ...
 
 def buscar_ultimo_sorteio():
     print("📡 Buscando dados do último sorteio...")
