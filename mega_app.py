@@ -31,13 +31,14 @@ def buscar_meus_jogos():
 
 df = load_data()
 if df.empty:
-    st.warning("Nenhum sorteio encontrado no banco.")
+    st.warning("Nenhum sorteio encontrado no banco oficial.")
     st.stop()
 
 ultimo_concurso = df.iloc[-1]
+proximo_concurso_previsto = int(ultimo_concurso['id']) + 1
 
 st.title("🍀 Painel Analítico da Mega-Sena")
-st.markdown(f"**Último Concurso Registrado pelo Robô:** {int(ultimo_concurso['id'])} (Data: {ultimo_concurso.get('data_sorteio', 'N/I')})")
+st.markdown(f"**Último Concurso Registrado:** {int(ultimo_concurso['id'])} (Data: {ultimo_concurso.get('data_sorteio', 'N/I')})")
 st.divider()
 
 # --- CRIANDO ABAS DE NAVEGAÇÃO ---
@@ -56,7 +57,6 @@ with aba_dash:
     b5.success(f"**{int(ultimo_concurso['bola_5']):02d}**")
     b6.success(f"**{int(ultimo_concurso['bola_6']):02d}**")
 
-    # Cálculos de Frequência
     todas_as_bolas = pd.concat([df['bola_1'], df['bola_2'], df['bola_3'], df['bola_4'], df['bola_5'], df['bola_6']])
     frequencias = todas_as_bolas.value_counts().reset_index()
     frequencias.columns = ['Número', 'Vezes Sorteado']
@@ -79,6 +79,9 @@ with aba_dash:
 # ==========================================
 with aba_gerador:
     st.subheader("🔮 Filtro Histórico (Rejeição Heurística)")
+    
+    # Campo para o usuário escolher o concurso alvo
+    concurso_alvo = st.number_input("Estes palpites serão para qual concurso?", min_value=1, value=proximo_concurso_previsto, step=1)
     
     def get_quadrante(n):
         linha = (n - 1) // 10
@@ -109,27 +112,24 @@ with aba_gerador:
                 if palpite not in jogos_gerados:
                     jogos_gerados.append(palpite)
 
-        # Salva temporariamente na "memória" do navegador
         st.session_state['jogos_temp'] = jogos_gerados
+        st.session_state['concurso_temp'] = concurso_alvo
         st.balloons()
 
-    # Se existem jogos na memória, exibe e mostra botão para salvar no banco
     if 'jogos_temp' in st.session_state:
-        st.success("🎯 Seus palpites estão prontos!")
+        st.success(f"🎯 Seus palpites para o concurso **{st.session_state['concurso_temp']}** estão prontos!")
         for i, jogo in enumerate(st.session_state['jogos_temp']):
             st.markdown(f"**Jogo {i+1}:** &nbsp; `{jogo[0]:02d}` - `{jogo[1]:02d}` - `{jogo[2]:02d}` - `{jogo[3]:02d}` - `{jogo[4]:02d}` - `{jogo[5]:02d}`")
             
-        st.info("Para que o aplicativo confira esses jogos após o próximo sorteio, salve-os no banco de dados!")
-        
         if st.button("💾 Salvar Palpites Oficiais no Supabase"):
             for jogo in st.session_state['jogos_temp']:
                 registro = {
+                    "concurso": st.session_state['concurso_temp'],
                     "bola_1": int(jogo[0]), "bola_2": int(jogo[1]), "bola_3": int(jogo[2]),
                     "bola_4": int(jogo[3]), "bola_5": int(jogo[4]), "bola_6": int(jogo[5])
                 }
                 supabase.table("meus_jogos").insert(registro).execute()
             
-            # Limpa a memória para não salvar duplicado
             del st.session_state['jogos_temp']
             st.success("✅ Jogos salvos com sucesso! Vá para a aba 'Conferidor de Jogos'.")
             st.rerun()
@@ -138,49 +138,67 @@ with aba_gerador:
 # ABA 3: CONFERIDOR
 # ==========================================
 with aba_conferidor:
-    st.subheader("✅ Conferidor Automático")
-    st.write("Aqui o sistema cruza os seus jogos salvos com o resultado do **último concurso** registrado.")
-    
-    # Criando um SET (Conjunto) com os números do sorteio oficial para comparação
-    sorteio_oficial = set([
-        int(ultimo_concurso['bola_1']), int(ultimo_concurso['bola_2']), int(ultimo_concurso['bola_3']),
-        int(ultimo_concurso['bola_4']), int(ultimo_concurso['bola_5']), int(ultimo_concurso['bola_6'])
-    ])
+    st.subheader("✅ Conferidor Direcionado")
     
     meus_jogos_df = buscar_meus_jogos()
     
-    if meus_jogos_df.empty:
-        st.info("Você não tem jogos salvos no banco de dados. Gere e salve na aba anterior!")
+    if meus_jogos_df.empty or 'concurso' not in meus_jogos_df.columns:
+        st.info("Você não tem jogos salvos com amarração de concurso. Gere e salve novos jogos na aba anterior!")
     else:
-        st.write(f"Você tem **{len(meus_jogos_df)}** jogo(s) na sua carteira.")
+        # Descobre quais concursos o usuário apostou e ordena do maior para o menor
+        concursos_apostados = sorted(meus_jogos_df['concurso'].dropna().unique().tolist(), reverse=True)
+        
+        # Cria um menu suspenso para o usuário escolher qual concurso quer conferir
+        concurso_selecionado = st.selectbox("Selecione o concurso que deseja conferir:", concursos_apostados)
+        
+        # Filtra os jogos do usuário apenas para o concurso selecionado
+        jogos_para_conferir = meus_jogos_df[meus_jogos_df['concurso'] == concurso_selecionado]
+        
+        st.write(f"Você tem **{len(jogos_para_conferir)}** jogo(s) registrado(s) para o concurso **{int(concurso_selecionado)}**.")
         st.divider()
         
-        for index, row in meus_jogos_df.iterrows():
-            # Cria um SET (Conjunto) com o jogo que o usuário salvou
-            meu_jogo = set([row['bola_1'], row['bola_2'], row['bola_3'], row['bola_4'], row['bola_5'], row['bola_6']])
+        # Busca no DataFrame principal (df) se o resultado desse concurso já existe
+        resultado_oficial = df[df['id'] == concurso_selecionado]
+        
+        if resultado_oficial.empty:
+            st.warning(f"⏳ **Aguardando Sorteio!** O robô ainda não registrou o resultado oficial do concurso **{int(concurso_selecionado)}**. Verifique novamente após o sorteio da Caixa.")
             
-            # A MÁGICA ACONTECE AQUI: A Interseção de Conjuntos!
-            acertos = sorteio_oficial.intersection(meu_jogo)
-            qtd_acertos = len(acertos)
+            # Mostra apenas os bilhetes apostados sem conferir
+            st.write("Sua Cartela de Apostas:")
+            for index, row in jogos_para_conferir.iterrows():
+                meu_jogo = [int(row['bola_1']), int(row['bola_2']), int(row['bola_3']), int(row['bola_4']), int(row['bola_5']), int(row['bola_6'])]
+                jogo_str = " - ".join([f"{x:02d}" for x in sorted(meu_jogo)])
+                st.markdown(f"- `{jogo_str}`")
+                
+        else:
+            # O Sorteio já aconteceu! Vamos conferir!
+            st.success("Sorteio realizado! Conferindo seus bilhetes...")
             
-            # Formatando os números para exibir
-            jogo_str = " - ".join([f"{x:02d}" for x in sorted(list(meu_jogo))])
-            acertos_str = " - ".join([f"{x:02d}" for x in sorted(list(acertos))]) if acertos else "Nenhum"
+            # Pegando os números oficiais do banco da Caixa
+            sorteio_oficial_set = set([
+                int(resultado_oficial.iloc[0]['bola_1']), int(resultado_oficial.iloc[0]['bola_2']), int(resultado_oficial.iloc[0]['bola_3']),
+                int(resultado_oficial.iloc[0]['bola_4']), int(resultado_oficial.iloc[0]['bola_5']), int(resultado_oficial.iloc[0]['bola_6'])
+            ])
             
-            col_jogo, col_resultado = st.columns([2, 1])
-            with col_jogo:
-                st.markdown(f"**Bilhete:** `{jogo_str}`")
-                if qtd_acertos > 0:
-                    st.caption(f"Acertou: **{acertos_str}**")
-            
-            with col_resultado:
-                if qtd_acertos == 6:
-                    st.success("🏆 SENA!")
-                elif qtd_acertos == 5:
-                    st.warning("🏅 QUINA!")
-                elif qtd_acertos == 4:
-                    st.info("🎖️ QUADRA!")
-                else:
-                    st.error(f"{qtd_acertos} acerto(s)")
-            
-            st.markdown("---")
+            for index, row in jogos_para_conferir.iterrows():
+                meu_jogo_set = set([int(row['bola_1']), int(row['bola_2']), int(row['bola_3']), int(row['bola_4']), int(row['bola_5']), int(row['bola_6'])])
+                
+                acertos = sorteio_oficial_set.intersection(meu_jogo_set)
+                qtd_acertos = len(acertos)
+                
+                jogo_str = " - ".join([f"{x:02d}" for x in sorted(list(meu_jogo_set))])
+                acertos_str = " - ".join([f"{x:02d}" for x in sorted(list(acertos))]) if acertos else "Nenhum"
+                
+                col_jogo, col_resultado = st.columns([2, 1])
+                with col_jogo:
+                    st.markdown(f"**Bilhete:** `{jogo_str}`")
+                    if qtd_acertos > 0:
+                        st.caption(f"Acertou: **{acertos_str}**")
+                
+                with col_resultado:
+                    if qtd_acertos == 6: st.success("🏆 SENA!")
+                    elif qtd_acertos == 5: st.warning("🏅 QUINA!")
+                    elif qtd_acertos == 4: st.info("🎖️ QUADRA!")
+                    else: st.error(f"{qtd_acertos} acerto(s)")
+                
+                st.markdown("---")
