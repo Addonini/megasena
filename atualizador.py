@@ -1,8 +1,9 @@
 import os
 import requests
+from datetime import datetime
 from supabase import create_client, Client
 
-# Busca as chaves de forma segura nas configurações ocultas do GitHub
+# Busca as chaves de forma segura
 URL_SUPABASE = os.environ.get("SUPABASE_URL")
 KEY_SUPABASE = os.environ.get("SUPABASE_KEY")
 
@@ -12,31 +13,37 @@ if not URL_SUPABASE or not KEY_SUPABASE:
 
 supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
 
-# ... (MANTENHA O RESTO DO SEU CÓDIGO IGUAL AQUI PARA BAIXO) ...
-
 def buscar_ultimo_sorteio():
-    print("📡 Buscando dados do último sorteio...")
+    print("📡 Buscando dados na API OFICIAL da Caixa...")
     
-    # API pública que consolida dados das Loterias
-    url = "https://loteriascaixa-api.herokuapp.com/api/megasena/latest"
+    # URL Oficial da Caixa Econômica Federal
+    url = "https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena"
+    
+    # "Disfarce" para a Caixa achar que é um humano acessando pelo Chrome
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+    }
     
     try:
-        # Fazendo a requisição na internet
-        resposta = requests.get(url)
+        # verify=False é necessário porque a Caixa vira e mexe tem problemas com o próprio certificado SSL
+        resposta = requests.get(url, headers=headers, verify=False)
         
         if resposta.status_code == 200:
-            dados = resposta.json() # Transforma o texto da web em um Dicionário Python
+            dados = resposta.json()
             
-            # Padronizando os dados para a estrutura da nossa tabela no Supabase
+            # A Caixa manda a data como DD/MM/AAAA. Vamos formatar para o banco (AAAA-MM-DD)
+            data_formatada = datetime.strptime(dados["dataApuracao"], '%d/%m/%Y').strftime('%Y-%m-%d')
+            
+            # Adaptando para a estrutura JSON da Caixa
             registro = {
-                "id": dados["concurso"], 
-                "data_sorteio": dados["data"],
-                "bola_1": int(dados["dezenas"][0]),
-                "bola_2": int(dados["dezenas"][1]),
-                "bola_3": int(dados["dezenas"][2]),
-                "bola_4": int(dados["dezenas"][3]),
-                "bola_5": int(dados["dezenas"][4]),
-                "bola_6": int(dados["dezenas"][5])
+                "id": dados["numero"], 
+                "data_sorteio": data_formatada,
+                "bola_1": int(dados["listaDezenas"][0]),
+                "bola_2": int(dados["listaDezenas"][1]),
+                "bola_3": int(dados["listaDezenas"][2]),
+                "bola_4": int(dados["listaDezenas"][3]),
+                "bola_5": int(dados["listaDezenas"][4]),
+                "bola_6": int(dados["listaDezenas"][5])
             }
             return registro
         else:
@@ -52,15 +59,15 @@ def salvar_no_banco(registro):
         return
         
     try:
-        # UPSERT: O pulo do gato! 
-        # Ele insere um novo registro. Se o 'id' (número do concurso) já existir, ele apenas atualiza.
-        # Isso impede que o banco fique com sorteios duplicados se você rodar o script duas vezes.
-        resposta = supabase.table("megasena").upsert(registro).execute()
+        supabase.table("megasena").upsert(registro).execute()
         print(f"✅ Sucesso! Concurso {registro['id']} salvo no Supabase.")
     except Exception as e:
         print(f"❌ Erro ao salvar no banco de dados: {e}")
 
-# --- EXECUÇÃO DO SCRIPT ---
 if __name__ == "__main__":
+    # Desativa os avisos de segurança de SSL na tela preta do GitHub
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    
     sorteio_atual = buscar_ultimo_sorteio()
     salvar_no_banco(sorteio_atual)
