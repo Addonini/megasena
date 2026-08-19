@@ -2,28 +2,26 @@ name: Robô da Mega-Sena
 
 on:
   schedule:
-    # 00:30 UTC = 21:30 BRT. Roda Qua (3), Sex (5) e Dom (0)
-    - cron: '30 0 * * 3,5,0'
-  workflow_dispatch: # Adiciona um botão para você rodar manualmente quando quiser!
+    # Roda às 00:30 UTC (21:30 no Brasil) nos dias de sorteio da Mega-Sena (Domingo, Quarta e Sexta em UTC = Terça, Quinta e Sábado no Brasil)
+    - cron: '30 0 * * 0,3,5'
+  workflow_dispatch:
 
 jobs:
   atualizar_banco:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Pegar os arquivos do projeto
-        uses: actions/checkout@v4
-        
-      - name: Instalar o Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          
-      - name: Instalar as bibliotecas
-        run: pip install -r requirements.txt
-        
-      - name: Rodar o Atualizador!
+      - run: pip install -r requirements.txt
+      
+      - name: Rodar o Atualizador da Mega-Sena
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: python atualizador.py
+        run: python atualizador_megasena.py
+
+      # 👇 BLOCO PARA MANTER O STREAMLIT DA MEGA-SENA ACORDADO 👇
+      - name: Manter Streamlit da Mega-Sena Acordado
+        run: curl -s "https://megasenadon.streamlit.app" > /dev/null
