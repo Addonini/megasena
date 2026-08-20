@@ -22,6 +22,5 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: python atualizador_megasena.py
 
-      # 👇 BLOCO PARA ACORDAR A TELA DA MEGA-SENA (BEM ALINHADO!) 👇
       - name: Manter Streamlit da Mega-Sena Acordado
         run: curl -s "https://megasenadon.streamlit.app" > /dev/null
